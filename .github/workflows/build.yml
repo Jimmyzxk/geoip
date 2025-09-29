@@ -14,6 +14,9 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    # [MODIFIED] - Grant write permissions to the GITHUB_TOKEN for this job
+    permissions:
+      contents: write
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v5
@@ -41,30 +44,15 @@ jobs:
           curl -L "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=${LICENSE_KEY}&suffix=tar.gz" -o ./output/GeoLite2-Country.tar.gz
           curl -L "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country-CSV&license_key=${LICENSE_KEY}&suffix=zip" -o ./output/GeoLite2-Country-CSV.zip
 
-      # [MODIFIED] - This is the step that has been replaced to fix the error
       - name: Prepare GeoLite2 databases
         run: |
-          # Exit immediately if a command exits with a non-zero status.
           set -e
-          
-          # Change into the output directory to simplify file operations
           cd ./output
-
           echo "--- Verifying downloaded file integrity ---"
-          # Loop through each downloaded archive to check its validity
           for file in *.zip *.tar.gz; do
-            # Check if the file is empty, which indicates a failed download
-            if [ ! -s "$file" ]; then
-              echo "Error: File '$file' is empty. Download failed."
-              exit 1
-            fi
-
-            # Use the 'file' command to determine the actual file type
+            if [ ! -s "$file" ]; then echo "Error: File '$file' is empty. Download failed."; exit 1; fi
             file_type=$(file "$file")
             echo "Checking '$file'... Type: ${file_type}"
-            
-            # If the file is not a valid Zip or Gzip archive, it's likely an error page.
-            # Print its content for debugging and then exit.
             if ! echo "${file_type}" | grep -q -E 'Zip archive data|gzip compressed data'; then
               echo "::error::File '$file' is not a valid archive! This is the most common symptom of an invalid MAXMIND_GEOLITE2_LICENSE secret."
               echo "--- Displaying content of invalid file '$file' for debugging ---"
@@ -74,25 +62,17 @@ jobs:
             fi
           done
           echo "--- All downloaded files are valid archives. ---"
-
-          # Now, safely unpack the verified archives
           echo "--- Unpacking archives ---"
           for file in *.zip; do unzip -o "$file"; done
           for file in *.tar.gz; do tar -xvzf "$file"; done
-
-          # Copy files directly within the 'output' directory
           echo "--- Organizing files ---"
           cp GeoLite2-Country_*/*.mmdb ./
           cp GeoLite2-ASN_*/*.mmdb ./
           cp GeoLite2-Country-CSV_*/{GeoLite2-Country-Blocks-*,GeoLite2-Country-Locations-en,GeoLite2-Country-Locations-zh-CN}.csv ./
           cp GeoLite2-ASN-CSV_*/*.csv ./
-
-          # Create and populate the 'geolite2' directory in the parent folder
           mkdir -p ../geolite2
           cp GeoLite2-Country-CSV_*/*.csv ../geolite2/
           cp GeoLite2-ASN-CSV_*/*.csv ../geolite2/
-          
-          # Return to the project root for subsequent steps
           cd ..
 
       - name: Build geoip files
@@ -131,7 +111,7 @@ jobs:
           git checkout -b release
           git add -A
           git commit -m "${{ env.RELEASE_NAME }}"
-          git remote add geoip "https:// ${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git remote add geoip "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
           git push -f -u geoip release
 
       - name: Purge jsdelivr CDN
